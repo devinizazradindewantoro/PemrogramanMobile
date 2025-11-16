@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
 /// ======================================================================
-/// SERVICE: FileService – Operasi dasar baca/tulis file JSON
+/// SERVICE: FileService – Utilitas dasar untuk file handling
 /// ======================================================================
 class FileService {
   Future<Directory> get _documentsDirectory async {
@@ -18,13 +18,11 @@ class FileService {
     return File(path.join(dir.path, fileName));
   }
 
-  /// Simpan string ke file
   Future<File> writeFile(String fileName, String content) async {
     final file = await _getFile(fileName);
     return await file.writeAsString(content);
   }
 
-  /// Baca string dari file
   Future<String> readFile(String fileName) async {
     try {
       final file = await _getFile(fileName);
@@ -34,276 +32,340 @@ class FileService {
     }
   }
 
-  /// Simpan Map sebagai JSON
-  Future<File> writeJson(String fileName, Map<String, dynamic> json) async {
-    return await writeFile(fileName, jsonEncode(json));
-  }
-
-  /// Baca JSON dari file
-  Future<Map<String, dynamic>> readJson(String fileName) async {
-    try {
-      final content = await readFile(fileName);
-      if (content.isEmpty) return {};
-      return jsonDecode(content) as Map<String, dynamic>;
-    } catch (e) {
-      return {};
-    }
-  }
-
-  /// Cek apakah file ada
   Future<bool> fileExists(String fileName) async {
     final file = await _getFile(fileName);
     return await file.exists();
   }
 
-  /// Hapus file
   Future<void> deleteFile(String fileName) async {
-    try {
-      final file = await _getFile(fileName);
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (e) {
-      debugPrint('Error deleting file: $e');
+    final file = await _getFile(fileName);
+    if (await file.exists()) {
+      await file.delete();
     }
   }
 }
 
 /// ======================================================================
-/// SERVICE: UserDataService – Simpan & baca data user dari JSON
+/// SERVICE: DirectoryService – Manajemen direktori
 /// ======================================================================
-class UserDataService {
+class DirectoryService {
   final FileService _fileService = FileService();
-  static const String _fileName = 'user_data.json';
 
-  Future<void> saveUserData({
-    required String name,
-    required String email,
-    int? age,
+  Future<Directory> createDirectory(String dirName) async {
+    final appDir = await _fileService._documentsDirectory;
+    final newDir = Directory(path.join(appDir.path, dirName));
+
+    if (!await newDir.exists()) {
+      await newDir.create(recursive: true);
+    }
+    return newDir;
+  }
+
+  Future<List<FileSystemEntity>> listFiles(String dirName) async {
+    final dir = await createDirectory(dirName);
+    return await dir.list().toList();
+  }
+
+  Future<void> deleteDirectory(String dirName) async {
+    final appDir = await _fileService._documentsDirectory;
+    final dir = Directory(path.join(appDir.path, dirName));
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
+  }
+}
+
+/// ======================================================================
+/// SERVICE: NoteService – Simpan & ambil note dari file JSON
+/// ======================================================================
+class NoteService {
+  final DirectoryService _dirService = DirectoryService();
+  static const String _notesDir = 'notes';
+
+  Future<void> saveNote({
+    required String title,
+    required String content,
   }) async {
-    final userData = {
-      'name': name,
-      'email': email,
-      'age': age ?? 0,
-      'last_update': DateTime.now().toIso8601String(),
+    final notesDir = await _dirService.createDirectory(_notesDir);
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.json';
+    final file = File(path.join(notesDir.path, fileName));
+
+    final noteData = {
+      'title': title,
+      'content': content,
+      'created_at': DateTime.now().toIso8601String(),
     };
-    await _fileService.writeJson(_fileName, userData);
+
+    await file.writeAsString(jsonEncode(noteData));
   }
 
-  Future<Map<String, dynamic>?> readUserData() async {
-    final exists = await _fileService.fileExists(_fileName);
-    if (!exists) return null;
+  Future<List<Map<String, dynamic>>> getAllNotes() async {
+    final notesDir = await _dirService.createDirectory(_notesDir);
+    final files = await notesDir.list().toList();
 
-    final data = await _fileService.readJson(_fileName);
-    return data.isNotEmpty ? data : null;
+    final List<Map<String, dynamic>> notes = [];
+
+    for (final entity in files) {
+      if (entity is File && entity.path.endsWith('.json')) {
+        final content = await entity.readAsString();
+        final data = jsonDecode(content) as Map<String, dynamic>;
+        data['file_path'] = entity.path;
+        notes.add(data);
+      }
+    }
+
+    notes.sort((a, b) =>
+        b['created_at'].toString().compareTo(a['created_at'].toString()));
+    return notes;
   }
 
-  Future<void> deleteUserData() async {
-    await _fileService.deleteFile(_fileName);
-  }
-
-  Future<bool> hasUserData() async {
-    return await _fileService.fileExists(_fileName);
+  Future<void> deleteNoteByPath(String filePath) async {
+    final file = File(filePath);
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 }
 
 // ============================================================================
 // MAIN APP
 // ============================================================================
-void main() => runApp(const MyApp());
+void main() => runApp(const NotesApp());
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class NotesApp extends StatelessWidget {
+  const NotesApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'User Data JSON Demo',
+      title: 'Catatan Lokal',
       theme: ThemeData(
-        primarySwatch: Colors.teal,
+        primarySwatch: Colors.indigo,
         useMaterial3: true,
       ),
-      home: const UserProfilePage(),
+      home: const NotesPage(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
 // ============================================================================
-// UI: UserProfilePage
+// UI: NotesPage – Halaman utama daftar catatan
 // ============================================================================
-class UserProfilePage extends StatefulWidget {
-  const UserProfilePage({super.key});
+class NotesPage extends StatefulWidget {
+  const NotesPage({super.key});
 
   @override
-  State<UserProfilePage> createState() => _UserProfilePageState();
+  State<NotesPage> createState() => _NotesPageState();
 }
 
-class _UserProfilePageState extends State<UserProfilePage> {
-  final UserDataService _userService = UserDataService();
-
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _ageController = TextEditingController();
-
-  Map<String, dynamic>? _savedData;
+class _NotesPageState extends State<NotesPage> {
+  final NoteService _noteService = NoteService();
+  List<Map<String, dynamic>> _notes = [];
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadNotes();
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _ageController.dispose();
-    super.dispose();
+  Future<void> _loadNotes() async {
+    final notes = await _noteService.getAllNotes();
+    setState(() => _notes = notes);
   }
 
-  /// Memuat data dari file JSON
-  Future<void> _loadUserData() async {
-    final data = await _userService.readUserData();
-    setState(() => _savedData = data);
-  }
-
-  /// Simpan data ke file JSON
-  Future<void> _saveUserData() async {
-    final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
-    final age = int.tryParse(_ageController.text);
-
-    if (name.isEmpty || email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama dan Email wajib diisi')),
-      );
-      return;
-    }
-
-    await _userService.saveUserData(name: name, email: email, age: age);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Data berhasil disimpan')),
+  Future<void> _addNote() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddNotePage()),
     );
-    await _loadUserData();
+    if (result == true) _loadNotes();
   }
 
-  /// Hapus data user
-  Future<void> _deleteUserData() async {
-    await _userService.deleteUserData();
-    setState(() => _savedData = null);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Data user dihapus')),
-    );
+  Future<void> _deleteNote(String filePath) async {
+    await _noteService.deleteNoteByPath(filePath);
+    _loadNotes();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profil User (File JSON)'),
+        title: const Text('Catatan Saya'),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
+      body: _notes.isEmpty
+          ? const Center(child: Text('Belum ada catatan.'))
+          : ListView.builder(
+              itemCount: _notes.length,
+              itemBuilder: (context, index) {
+                final note = _notes[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: ListTile(
+                    title: Text(note['title'] ?? 'Tanpa Judul'),
+                    subtitle: Text(
+                      note['content'] ?? '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _deleteNote(note['file_path']),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NoteDetailPage(note: note),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addNote,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// UI: AddNotePage – Form tambah catatan
+// ============================================================================
+class AddNotePage extends StatefulWidget {
+  const AddNotePage({super.key});
+
+  @override
+  State<AddNotePage> createState() => _AddNotePageState();
+}
+
+class _AddNotePageState extends State<AddNotePage> {
+  final NoteService _noteService = NoteService();
+  final _titleController = TextEditingController();
+  final _contentController = TextEditingController();
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveNote() async {
+    final title = _titleController.text.trim();
+    final content = _contentController.text.trim();
+
+    if (title.isEmpty || content.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Judul dan isi wajib diisi!'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    await _noteService.saveNote(title: title, content: content);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Catatan disimpan!'), backgroundColor: Colors.green),
+      );
+      Navigator.pop(context, true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Catatan Baru'),
+        centerTitle: true,
+        actions: [
+          IconButton(icon: const Icon(Icons.save), onPressed: _saveNote),
+        ],
+      ),
+      body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // === FORM INPUT ===
-            _buildTextField(_nameController, 'Nama'),
-            const SizedBox(height: 12),
-            _buildTextField(_emailController, 'Email'),
-            const SizedBox(height: 12),
-            _buildTextField(
-              _ageController,
-              'Usia',
-              keyboardType: TextInputType.number,
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: 'Judul',
+                border: OutlineInputBorder(),
+                hintText: 'Masukkan judul...',
+              ),
+              textInputAction: TextInputAction.next,
             ),
-            const SizedBox(height: 24),
-
-            // === BUTTONS ===
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.save),
-                    label: const Text('Simpan'),
-                    onPressed: _saveUserData,
-                  ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: TextField(
+                controller: _contentController,
+                decoration: const InputDecoration(
+                  labelText: 'Isi Catatan',
+                  border: OutlineInputBorder(),
+                  hintText: 'Tulis di sini...',
+                  alignLabelWithHint: true,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.delete),
-                    label: const Text('Hapus'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                    ),
-                    onPressed: _deleteUserData,
-                  ),
-                ),
-              ],
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+              ),
             ),
-
-            const SizedBox(height: 32),
-            const Divider(),
-
-            // === TAMPILAN DATA TERSIMPAN ===
-            _savedData == null
-                ? const Text(
-                    'Belum ada data tersimpan.',
-                    style: TextStyle(color: Colors.grey),
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Data Tersimpan:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildDataRow('Nama', _savedData!['name'].toString()),
-                      _buildDataRow('Email', _savedData!['email'].toString()),
-                      _buildDataRow('Usia', _savedData!['age'].toString()),
-                      _buildDataRow('Update Terakhir', _savedData!['last_update'].toString()),
-                    ],
-                  ),
           ],
         ),
       ),
     );
   }
+}
 
-  /// Helper: TextField dengan style konsisten
-  Widget _buildTextField(TextEditingController controller, String label,
-      {TextInputType? keyboardType}) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
-    );
+// ============================================================================
+// UI: NoteDetailPage – Detail catatan
+// ============================================================================
+class NoteDetailPage extends StatelessWidget {
+  final Map<String, dynamic> note;
+
+  const NoteDetailPage({super.key, required this.note});
+
+  String _formatDate(String isoString) {
+    try {
+      final date = DateTime.parse(isoString);
+      return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return isoString;
+    }
   }
 
-  /// Helper: Menampilkan satu baris data (label: value)
-  Widget _buildDataRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(note['title'] ?? 'Catatan'),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                note['content'] ?? '',
+                style: const TextStyle(fontSize: 16, height: 1.6),
+              ),
+              const SizedBox(height: 24),
+              if (note['created_at'] != null)
+                Text(
+                  'Dibuat: ${_formatDate(note['created_at'])}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+            ],
           ),
-          Expanded(child: Text(value)),
-        ],
+        ),
       ),
     );
   }
