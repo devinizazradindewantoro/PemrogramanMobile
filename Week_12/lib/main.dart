@@ -3,240 +3,198 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 // ========================================
-// CONFIG: API Settings
+// CONFIG: API Base URL
 // ========================================
 class ApiConfig {
-  static const String baseUrl = 'https://laffandi.wiremockapi.cloud';
-  static const String usersEndpoint = '/users';
-  static const Map<String, String> headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
+  static const String baseUrl = 'https://pokeapi.co/api/v2';
+  static const String dittoEndpoint = '/pokemon/ditto'; // Bisa diganti
 }
 
 // ========================================
 // MAIN APP
 // ========================================
-void main() => runApp(const WireMockApp());
+void main() => runApp(const PokeApp());
 
-class WireMockApp extends StatelessWidget {
-  const WireMockApp({super.key});
+class PokeApp extends StatelessWidget {
+  const PokeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'WireMock Cloud Demo',
+      title: 'PokeAPI – Ditto',
       theme: ThemeData(
-        primarySwatch: Colors.indigo,
+        primarySwatch: Colors.red,
         useMaterial3: true,
       ),
-      home: const UserPage(),
+      home: const PokemonPage(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
 // ========================================
-// UI: UserPage – CRUD dengan WireMock
+// UI: PokemonPage
 // ========================================
-class UserPage extends StatefulWidget {
-  const UserPage({super.key});
+class PokemonPage extends StatefulWidget {
+  const PokemonPage({super.key});
 
   @override
-  State<UserPage> createState() => _UserPageState();
+  State<PokemonPage> createState() => _PokemonPageState();
 }
 
-class _UserPageState extends State<UserPage> {
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-
-  List<dynamic> users = [];
+class _PokemonPageState extends State<PokemonPage> {
+  Map<String, dynamic>? pokemonData;
   bool isLoading = false;
-  String? errorMessage;
-  String? postMessage;
+  String? error;
 
   @override
   void initState() {
     super.initState();
-    fetchUsers();
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    super.dispose();
+    fetchPokemon();
   }
 
   // ========================================
-  // GET: Fetch all users
+  // FETCH: Ambil data dari PokeAPI
   // ========================================
-  Future<void> fetchUsers() async {
+  Future<void> fetchPokemon() async {
     setState(() {
       isLoading = true;
-      errorMessage = null;
+      error = null;
     });
 
-    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersEndpoint}');
+    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.dittoEndpoint}');
 
     try {
       final response = await http
-          .get(url, headers: ApiConfig.headers)
-          .timeout(const Duration(seconds: 10));
+          .get(url)
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        setState(() => users = data is List ? data : []);
+        setState(() {
+          pokemonData = data;
+          isLoading = false;
+        });
       } else {
-        setState(() => errorMessage = 'Error ${response.statusCode}');
+        setState(() {
+          error = 'Gagal memuat data. Status: ${response.statusCode}';
+          isLoading = false;
+        });
       }
     } catch (e) {
-      setState(() => errorMessage = 'Error: $e');
-    } finally {
-      setState(() => isLoading = false);
+      setState(() {
+        error = 'Terjadi kesalahan: $e';
+        isLoading = false;
+      });
     }
   }
 
   // ========================================
-  // POST: Add new user
+  // UI: Build Pokémon Card
   // ========================================
-  Future<void> addUser() async {
-    final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
+  Widget _buildPokemonCard() {
+    final name = pokemonData?['name'] ?? 'Unknown';
+    final id = pokemonData?['id'] ?? '-';
+    final height = pokemonData?['height'] ?? '-';
+    final weight = pokemonData?['weight'] ?? '-';
+    final sprite = pokemonData?['sprites']?['front_default'] ??
+        'https://via.placeholder.com/150';
 
-    if (name.isEmpty || email.isEmpty) {
-      _showSnackBar('Nama & Email tidak boleh kosong!', Colors.red);
-      return;
-    }
+    return Card(
+      margin: const EdgeInsets.all(20),
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Sprite
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                sprite,
+                width: 160,
+                height: 160,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 160,
+                  height: 160,
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.crisis_alert, size: 60, color: Colors.grey),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
 
-    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersEndpoint}');
-    final body = jsonEncode({'name': name, 'email': email});
+            // Name
+            Text(
+              name.toString().toUpperCase(),
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 12),
 
-    try {
-      final response = await http
-          .post(url, headers: ApiConfig.headers, body: body)
-          .timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final result = jsonDecode(response.body) as Map<String, dynamic>;
-        final message = result['message'] ?? 'User berhasil ditambahkan!';
-
-        setState(() => postMessage = message);
-        _showSnackBar(message, Colors.green);
-
-        _nameController.clear();
-        _emailController.clear();
-        fetchUsers();
-      } else {
-        final msg = 'Gagal menambah user (${response.statusCode})';
-        setState(() => postMessage = msg);
-        _showSnackBar(msg, Colors.red);
-      }
-    } catch (e) {
-      final msg = 'Error: $e';
-      setState(() => postMessage = msg);
-      _showSnackBar(msg, Colors.red);
-    }
+            // Stats
+            _buildInfoRow('ID', '#${id.toString().padLeft(3, '0')}'),
+            _buildInfoRow('Height', '$height dm'),
+            _buildInfoRow('Weight', '$weight hg'),
+          ],
+        ),
+      ),
+    );
   }
 
-  void _showSnackBar(String message, Color backgroundColor) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: backgroundColor),
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(value),
+        ],
+      ),
     );
   }
 
   // ========================================
-  // UI: Build method
+  // UI: Build Method
   // ========================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WireMock Cloud - Users'),
+        title: const Text('PokeAPI – Ditto'),
         centerTitle: true,
+        elevation: 2,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // === Form Input ===
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nama',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Tambah User'),
-              onPressed: addUser,
-            ),
-            const SizedBox(height: 20),
-
-            // === Feedback POST ===
-            if (postMessage != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  border: Border.all(color: Colors.green),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  postMessage!,
-                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            const Text(
-              'Daftar User',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const Divider(),
-
-            // === Data List ===
-            Expanded(
-              child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : errorMessage != null
-                      ? Center(child: Text(errorMessage!, style: const TextStyle(color: Colors.red)))
-                      : users.isEmpty
-                          ? const Center(child: Text('Belum ada data.'))
-                          : ListView.builder(
-                              itemCount: users.length,
-                              itemBuilder: (context, index) {
-                                final user = users[index];
-                                return Card(
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      child: Text(user['id']?.toString() ?? '?'),
-                                    ),
-                                    title: Text(user['name'] ?? 'Tanpa Nama'),
-                                    subtitle: Text(user['email'] ?? 'Tanpa Email'),
-                                  ),
-                                );
-                              },
-                            ),
-            ),
-          ],
-        ),
+      body: Center(
+        child: isLoading
+            ? const CircularProgressIndicator()
+            : error != null
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error, color: Colors.red, size: 60),
+                      const SizedBox(height: 16),
+                      Text(
+                        error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red, fontSize: 16),
+                      ),
+                    ],
+                  )
+                : pokemonData == null
+                    ? const Text('Tidak ada data')
+                    : _buildPokemonCard(),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: fetchUsers,
+        onPressed: fetchPokemon,
+        tooltip: 'Refresh',
         child: const Icon(Icons.refresh),
       ),
     );
