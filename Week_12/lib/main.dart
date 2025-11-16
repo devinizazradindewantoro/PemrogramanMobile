@@ -1,86 +1,87 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
 /// ======================================================================
-/// SERVICE: FileService – operasi dasar baca/tulis file JSON
+/// SERVICE: FileService – Operasi dasar baca/tulis file JSON
 /// ======================================================================
 class FileService {
-  Future<Directory> get documentsDirectory async {
+  Future<Directory> get _documentsDirectory async {
     return await getApplicationDocumentsDirectory();
   }
 
-  // Simpan data ke file (String)
-  Future<File> writeFile(String fileName, String content) async {
-    final Directory dir = await documentsDirectory;
-    final File file = File(path.join(dir.path, fileName));
-    return file.writeAsString(content);
+  Future<File> _getFile(String fileName) async {
+    final dir = await _documentsDirectory;
+    return File(path.join(dir.path, fileName));
   }
 
-  // Baca data dari file
+  /// Simpan string ke file
+  Future<File> writeFile(String fileName, String content) async {
+    final file = await _getFile(fileName);
+    return await file.writeAsString(content);
+  }
+
+  /// Baca string dari file
   Future<String> readFile(String fileName) async {
     try {
-      final Directory dir = await documentsDirectory;
-      final File file = File(path.join(dir.path, fileName));
+      final file = await _getFile(fileName);
       return await file.readAsString();
     } catch (e) {
       return '';
     }
   }
 
-  // Simpan object sebagai JSON
+  /// Simpan Map sebagai JSON
   Future<File> writeJson(String fileName, Map<String, dynamic> json) async {
-    final String content = jsonEncode(json);
-    return writeFile(fileName, content);
+    return await writeFile(fileName, jsonEncode(json));
   }
 
-  // Baca JSON dari file
+  /// Baca JSON dari file
   Future<Map<String, dynamic>> readJson(String fileName) async {
     try {
-      final String content = await readFile(fileName);
-      return jsonDecode(content);
+      final content = await readFile(fileName);
+      if (content.isEmpty) return {};
+      return jsonDecode(content) as Map<String, dynamic>;
     } catch (e) {
       return {};
     }
   }
 
-  // Cek apakah file ada
-Future<bool> fileExists(String fileName) async {
-  final Directory dir = await documentsDirectory;
-  final File file = File(path.join(dir.path, fileName));
-  return file.exists();
-}
+  /// Cek apakah file ada
+  Future<bool> fileExists(String fileName) async {
+    final file = await _getFile(fileName);
+    return await file.exists();
+  }
 
-// Hapus file
-Future<void> deleteFile(String fileName) async {
-  try {
-    final Directory dir = await documentsDirectory;
-    final File file = File(path.join(dir.path, fileName));
-    if (await file.exists()) {
-      await file.delete();
+  /// Hapus file
+  Future<void> deleteFile(String fileName) async {
+    try {
+      final file = await _getFile(fileName);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Error deleting file: $e');
     }
-  } catch (e) {
-    print('Error deleting file: $e');
   }
 }
-}
 
 /// ======================================================================
-/// SERVICE: UserDataService – untuk menyimpan dan membaca user data
+/// SERVICE: UserDataService – Simpan & baca data user dari JSON
 /// ======================================================================
-
 class UserDataService {
   final FileService _fileService = FileService();
-  final String _fileName = 'user_data.json';
+  static const String _fileName = 'user_data.json';
 
   Future<void> saveUserData({
     required String name,
     required String email,
     int? age,
   }) async {
-    final Map<String, dynamic> userData = {
+    final userData = {
       'name': name,
       'email': email,
       'age': age ?? 0,
@@ -93,204 +94,217 @@ class UserDataService {
     final exists = await _fileService.fileExists(_fileName);
     if (!exists) return null;
 
-    final Map<String, dynamic> data =
-        await _fileService.readJson(_fileName);
+    final data = await _fileService.readJson(_fileName);
     return data.isNotEmpty ? data : null;
   }
 
   Future<void> deleteUserData() async {
     await _fileService.deleteFile(_fileName);
-}
+  }
 
-Future<bool> hasUserData() async {
+  Future<bool> hasUserData() async {
     return await _fileService.fileExists(_fileName);
+  }
 }
-}
-
 
 // ============================================================================
 // MAIN APP
 // ============================================================================
-
-
-void main() {
-    runApp(MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
-    @override
-    Widget build(BuildContext context) {
-        return MaterialApp(
-            title: 'User Data JSON Demo',
-            theme: ThemeData(primarySwatch: Colors.teal),
-            home: UserProfilePage(),
-        ); // MaterialApp
-    }
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'User Data JSON Demo',
+      theme: ThemeData(
+        primarySwatch: Colors.teal,
+        useMaterial3: true,
+      ),
+      home: const UserProfilePage(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
 }
 
-
 // ============================================================================
-/// UI: UserProfilePage
+// UI: UserProfilePage
 // ============================================================================
-
 class UserProfilePage extends StatefulWidget {
-    @override
-    UserProfilePageState createState() => _UserProfilePageState();
+  const UserProfilePage({super.key});
+
+  @override
+  State<UserProfilePage> createState() => _UserProfilePageState();
 }
 
 class _UserProfilePageState extends State<UserProfilePage> {
-    final UserDataService _userService = UserDataService();
-    final TextEditingController _nameController = TextEditingController();
-    final TextEditingController _emailController = TextEditingController();
-    final TextEditingController _ageController = TextEditingController();
+  final UserDataService _userService = UserDataService();
 
-    Map<String, dynamic>? _savedData;
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _ageController = TextEditingController();
 
-    @override
-    void initState() {
-        super.initState();
-        _loadUserData();
+  Map<String, dynamic>? _savedData;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _ageController.dispose();
+    super.dispose();
+  }
+
+  /// Memuat data dari file JSON
+  Future<void> _loadUserData() async {
+    final data = await _userService.readUserData();
+    setState(() => _savedData = data);
+  }
+
+  /// Simpan data ke file JSON
+  Future<void> _saveUserData() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final age = int.tryParse(_ageController.text);
+
+    if (name.isEmpty || email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama dan Email wajib diisi')),
+      );
+      return;
     }
 
-    /// Memuat data user dari file JSON
-Future<void> _loadUserData() async {
-    final data = await _userService.readUserData();
-    setState(() {
-        _savedData = data;
-    });
-}
-
-/// Simpan data ke file JSON
-Future<void> _saveUserData() async {
-    await _userService.saveUserData(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        age: int.tryParse(_ageController.text),
+    await _userService.saveUserData(name: name, email: email, age: age);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Data berhasil disimpan')),
     );
-
-    ScaffoldMessenger.of(
-        context,
-    ).showSnackBar(SnackBar(content: Text('✔️ Data berhasil disimpan')));
-
     await _loadUserData();
-}
+  }
 
-/// Hapus file JSON
-Future<void> _deleteUserData() async {
+  /// Hapus data user
+  Future<void> _deleteUserData() async {
     await _userService.deleteUserData();
     setState(() => _savedData = null);
-    ScaffoldMessenger.of(
-        context,
-    ).showSnackBar(SnackBar(content: Text('🗑️ Data user dihapus')));
-}
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Data user dihapus')),
+    );
+  }
 
-@Override
-Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text('Profil User (File JSON)')),
-        body: SingleChildScrollView(
-            padding: EdgeInsets.all(16),
-            child: Column(
-                children: [
-                    // FORM INPUT
-                    TextField(
-                        controller: _nameController,
-                        decoration: InputDecoration(
-                            labelText: 'Nama',
-                            border: OutlineInputBorder(),
-                        ), // InputDecoration
-                    ), // TextField
+      appBar: AppBar(
+        title: const Text('Profil User (File JSON)'),
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // === FORM INPUT ===
+            _buildTextField(_nameController, 'Nama'),
+            const SizedBox(height: 12),
+            _buildTextField(_emailController, 'Email'),
+            const SizedBox(height: 12),
+            _buildTextField(
+              _ageController,
+              'Usia',
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 24),
 
-                    SizedBox(height: 10),
-
-                    TextField(
-                        controller: _emailController,
-                        decoration: InputDecoration(
-                            labelText: 'Email',
-                            border: OutlineInputBorder(),
-                        ), // InputDecoration
-                    ), // TextField
-
-                    SizedBox(height: 10),
-
-                    TextField(
-                        controller: _ageController,
-                        decoration: InputDecoration(
-                            labelText: 'Usia',
-                            border: OutlineInputBorder(),
-                        ), // InputDecoration
-                        keyboardType: TextInputType.number,
-                    ), // TextField
-
-                    SizedBox(height: 20),
-
-                    // BUTTONS
-                    Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                            ElevatedButton.icon(
-                                icon: Icon(Icons.save),
-                                label: Text('Simpan'),
-                                onPressed: _saveUserData,
-                            ), // ElevatedButton.icon
-
-                            ElevatedButton.icon(
-                                icon: Icon(Icons.delete),
-                                label: Text('Hapus'),
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.redAccent,
-                                ),
-                                onPressed: _deleteUserData,
-                            ), // ElevatedButton.icon
-                        ],
+            // === BUTTONS ===
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.save),
+                    label: const Text('Simpan'),
+                    onPressed: _saveUserData,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.delete),
+                    label: const Text('Hapus'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
                     ),
-// ElevatedButton.icon
-],
-), // Row
+                    onPressed: _deleteUserData,
+                  ),
+                ),
+              ],
+            ),
 
-SizedBox(height: 30),
-Divider(),
+            const SizedBox(height: 32),
+            const Divider(),
 
-// TAMPILAN DATA YANG DISIMPAN
-_savedData == null
-    ? Text(
-        'Belum ada data tersimpan.',
-        style: TextStyle(color: Colors.grey),
-      ) // Text
-    : Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+            // === TAMPILAN DATA TERSIMPAN ===
+            _savedData == null
+                ? const Text(
+                    'Belum ada data tersimpan.',
+                    style: TextStyle(color: Colors.grey),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Data Tersimpan:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDataRow('Nama', _savedData!['name'].toString()),
+                      _buildDataRow('Email', _savedData!['email'].toString()),
+                      _buildDataRow('Usia', _savedData!['age'].toString()),
+                      _buildDataRow('Update Terakhir', _savedData!['last_update'].toString()),
+                    ],
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Helper: TextField dengan style konsisten
+  Widget _buildTextField(TextEditingController controller, String label,
+      {TextInputType? keyboardType}) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      ),
+    );
+  }
+
+  /// Helper: Menampilkan satu baris data (label: value)
+  Widget _buildDataRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
         children: [
           Text(
-            'Data Tersimpan:',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.teal,
-            ), // TextStyle
-          ), // Text
-          SizedBox(height: 8),
-          _buildDataRow('Nama', _savedData!['name']),
-          _buildDataRow('Email', _savedData!['email']),
-          _buildDataRow('Usia', _savedData!['age'].toString()),
-          _buildDataRow(
-            'Update Terakhir',
-            _savedData!['last_update'],
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-        ], // Column
-      ), // Column
-    ), // SingleChildScrollView
-  ); // Scaffold
-}
-
-/// Widget helper untuk menampilkan 1 baris data
-Widget _buildDataRow(String label, String value) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      children: [
-        Text('$label: ', style: TextStyle(fontWeight: FontWeight.bold)),
-        Expanded(child: Text(value)),
-      ],
-    ), // Row
-  ); // Padding
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
 }
