@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "jobsheet4",
+            "cwd": "jobsheet4",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "jobsheet4 (profile mode)",
+            "cwd": "jobsheet4",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "jobsheet4 (release mode)",
+            "cwd": "jobsheet4",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}
